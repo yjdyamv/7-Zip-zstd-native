@@ -96,11 +96,6 @@ jobs:
             artifact: 7zz-macos-arm64
             pkg: tar.gz
             outdir: _o
-          - name: macos-x64
-            os: macos-14
-            artifact: 7zz-macos-x64
-            pkg: tar.gz
-            outdir: _o
           - name: windows-x64
             os: windows-latest
             artifact: 7zz-windows-x64
@@ -193,7 +188,7 @@ jobs:
           (https://github.com/mcmilk/7-Zip-zstd/commit/$COMMIT).
 
           - Linux x64 / arm64 (7zz)
-          - macOS x64 / arm64 (7zz)
+          - macOS arm64 (7zz)
           - Windows x64 (7zz.exe)"
           if gh release view "$TAG" >/dev/null 2>&1; then
             if [ "${{ github.event.inputs.overwrite }}" = "true" ] || [ "${{ github.event_name }}" = "push" ]; then
