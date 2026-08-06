@@ -97,7 +97,7 @@ jobs:
             pkg: tar.gz
             outdir: _o
           - name: macos-x64
-            os: macos-13
+            os: macos-14
             artifact: 7zz-macos-x64
             pkg: tar.gz
             outdir: _o

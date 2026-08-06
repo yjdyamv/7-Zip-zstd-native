@@ -16,7 +16,7 @@ so every release can be traced back to the exact source it was built from
 | Linux x64 | `ubuntu-latest` | `7zz-linux-x64.tar.gz` |
 | Linux arm64 | `ubuntu-24.04-arm` | `7zz-linux-arm64.tar.gz` |
 | macOS arm64 | `macos-14` | `7zz-macos-arm64.tar.gz` |
-| macOS x64 | `macos-13` | `7zz-macos-x64.tar.gz` |
+| macOS x64 | `macos-14` | `7zz-macos-x64.tar.gz` |
 | Windows x64 | `windows-latest` (MSVC nmake) | `7zz-windows-x64.zip` |
 | Windows arm64 | `windows-11-arm` (MSVC nmake) | `7zz-windows-arm64.zip` |
 
