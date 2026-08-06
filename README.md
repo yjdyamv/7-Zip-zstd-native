@@ -18,6 +18,7 @@ so every release can be traced back to the exact source it was built from
 | macOS arm64 | `macos-14` | `7zz-macos-arm64.tar.gz` |
 | macOS x64 | `macos-13` | `7zz-macos-x64.tar.gz` |
 | Windows x64 | `windows-latest` (MSYS2 MinGW) | `7zz-windows-x64.zip` |
+| Windows arm64 | `windows-11-arm` (MSYS2 CLANGARM64) | `7zz-windows-arm64.zip` |
 
 ## Usage
 
@@ -37,12 +38,14 @@ corresponding upstream tag and publishes/updates the release automatically.
 ## Build notes
 
 - Linux/macOS use the upstream `makefile.gcc` directly (GCC/clang).
-- Windows uses MSYS2 MinGW (`makefile.gcc` is the upstream-supported native
-  route; the source tree has no MSVC solution files). A small `MyWindows.o`
-  is linked into the Windows build because some MinGW import libraries do
-  not export the newer `FileTimeToLocalFileTime2` /
-  `LocalFileTimeToFileTime2` APIs; the fallback implementation in
-  `CPP/Common/MyWindows.cpp` provides them via older exported APIs.
+- Windows x64 uses MSYS2 MinGW (`MINGW64`), Windows arm64 uses MSYS2
+  `CLANGARM64` — both native runners, since `makefile.gcc` is the
+  upstream-supported route and the source tree has no MSVC solution files.
+  A small `MyWindows.o` is linked into the Windows builds because some
+  MinGW import libraries do not export the newer
+  `FileTimeToLocalFileTime2` / `LocalFileTimeToFileTime2` APIs; the fallback
+  implementation in `CPP/Common/MyWindows.cpp` provides them via older
+  exported APIs.
 - `-Werror` is relaxed to non-fatal warnings (`-Wall -Wextra`) so future
   toolchain warnings cannot break the build.
 

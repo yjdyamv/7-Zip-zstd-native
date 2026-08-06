@@ -101,16 +101,34 @@ jobs:
             os: windows-latest
             artifact: 7zz-windows-x64
             pkg: zip
+            msystem: MINGW64
+            packages: >-
+              mingw-w64-x86_64-gcc
+              mingw-w64-x86_64-make
+            cc: gcc
+            cxx: g++
+            rc: windres
+            flto: -flto=auto
+          - name: windows-arm64
+            os: windows-11-arm
+            artifact: 7zz-windows-arm64
+            pkg: zip
+            msystem: CLANGARM64
+            packages: >-
+              mingw-w64-clang-aarch64-toolchain
+              make
+            cc: clang
+            cxx: clang++
+            rc: llvm-rc
+            flto: -flto
     steps:
       - name: Set up MSYS2 (Windows)
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: ${{ matrix.msystem }}
           update: false
-          install: >-
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-make
+          install: ${{ matrix.packages }}
 
       - name: Checkout upstream
         uses: actions/checkout@v7
@@ -119,7 +137,7 @@ jobs:
           ref: ${{ needs.resolve.outputs.commit }}
           path: src-7zip
 
-      - name: Build (Windows, MSYS2 MinGW)
+      - name: Build (Windows, MSYS2)
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
@@ -127,10 +145,12 @@ jobs:
           # Some MinGW import libraries lack the newer
           # FileTimeToLocalFileTime2/LocalFileTimeToFileTime2 exports; link the
           # fallback implementation provided by MyWindows.cpp.
-          g++ -O2 -c -DNDEBUG -D_REENTRANT -D_FILE_OFFSET_BITS=64 \
-            -D_LARGEFILE_SOURCE -fPIC -flto=auto \
+          ${{ matrix.cxx }} -O2 -c -DNDEBUG -D_REENTRANT -D_FILE_OFFSET_BITS=64 \
+            -D_LARGEFILE_SOURCE -fPIC ${{ matrix.flto }} \
             -o _o/MyWindows.o ../../../Common/MyWindows.cpp
           make -j2 -f makefile.gcc \
+            CC="${{ matrix.cc }}" CXX="${{ matrix.cxx }}" RC="${{ matrix.rc }}" \
+            FLAGS_FLTO="${{ matrix.flto }}" \
             MY_LIBS="_o/MyWindows.o" \
             CFLAGS_WARN_WALL="-Wall -Wextra"
 
