@@ -85,51 +85,35 @@ jobs:
             os: ubuntu-latest
             artifact: 7zz-linux-x64
             pkg: tar.gz
+            outdir: _o
           - name: linux-arm64
             os: ubuntu-24.04-arm
             artifact: 7zz-linux-arm64
             pkg: tar.gz
+            outdir: _o
           - name: macos-arm64
             os: macos-14
             artifact: 7zz-macos-arm64
             pkg: tar.gz
+            outdir: _o
           - name: macos-x64
             os: macos-13
             artifact: 7zz-macos-x64
             pkg: tar.gz
+            outdir: _o
           - name: windows-x64
             os: windows-latest
             artifact: 7zz-windows-x64
             pkg: zip
-            msystem: MINGW64
-            packages: >-
-              mingw-w64-x86_64-gcc
-              mingw-w64-x86_64-make
-            cc: gcc
-            cxx: g++
-            rc: windres
-            flto: -flto=auto
+            outdir: x64
+            arch: x64
           - name: windows-arm64
             os: windows-11-arm
             artifact: 7zz-windows-arm64
             pkg: zip
-            msystem: CLANGARM64
-            packages: >-
-              mingw-w64-clang-aarch64-toolchain
-              make
-            cc: clang
-            cxx: clang++
-            rc: llvm-rc
-            flto: -flto
+            outdir: arm64
+            arch: arm64
     steps:
-      - name: Set up MSYS2 (Windows)
-        if: runner.os == 'Windows'
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: ${{ matrix.msystem }}
-          update: false
-          install: ${{ matrix.packages }}
-
       - name: Checkout upstream
         uses: actions/checkout@v7
         with:
@@ -137,22 +121,18 @@ jobs:
           ref: ${{ needs.resolve.outputs.commit }}
           path: src-7zip
 
-      - name: Build (Windows, MSYS2)
+      - name: Build (Windows, MSVC nmake)
         if: runner.os == 'Windows'
-        shell: msys2 {0}
+        shell: cmd
         run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products * -property installationPath`) do set "VSDIR=%%i"
+          if not defined VSDIR echo ::error::Visual Studio not found
+          if not defined VSDIR exit /b 1
+          call "%VSDIR%/VC/Auxiliary/Build/vcvarsall.bat" ${{ matrix.arch }}
+          if errorlevel 1 exit /b 1
           cd src-7zip/CPP/7zip/Bundles/Alone2
-          # Some MinGW import libraries lack the newer
-          # FileTimeToLocalFileTime2/LocalFileTimeToFileTime2 exports; link the
-          # fallback implementation provided by MyWindows.cpp.
-          ${{ matrix.cxx }} -O2 -c -DNDEBUG -D_REENTRANT -D_FILE_OFFSET_BITS=64 \
-            -D_LARGEFILE_SOURCE -fPIC ${{ matrix.flto }} \
-            -o _o/MyWindows.o ../../../Common/MyWindows.cpp
-          make -j2 -f makefile.gcc \
-            CC="${{ matrix.cc }}" CXX="${{ matrix.cxx }}" RC="${{ matrix.rc }}" \
-            FLAGS_FLTO="${{ matrix.flto }}" \
-            MY_LIBS="_o/MyWindows.o" \
-            CFLAGS_WARN_WALL="-Wall -Wextra"
+          nmake -nologo -f makefile PLATFORM=${{ matrix.arch }}
+          if errorlevel 1 exit /b 1
 
       - name: Build (Linux / macOS)
         if: runner.os != 'Windows'
@@ -166,7 +146,7 @@ jobs:
           set -e
           PKG_DIR="$RUNNER_TEMP/pkg"
           mkdir -p "$PKG_DIR"
-          cp src-7zip/CPP/7zip/Bundles/Alone2/_o/7zz* "$PKG_DIR/" 2>/dev/null || true
+          cp "src-7zip/CPP/7zip/Bundles/Alone2/${{ matrix.outdir }}/7zz"* "$PKG_DIR/" 2>/dev/null || true
           cp src-7zip/COPYING "$PKG_DIR/LICENSE" 2>/dev/null || true
           {
             echo "tag=${{ needs.resolve.outputs.tag }}"
@@ -175,7 +155,7 @@ jobs:
           } > "$PKG_DIR/VERSION"
           cd "$PKG_DIR"
           if [ "${{ matrix.pkg }}" = "zip" ]; then
-            tar -a -c -f "$RUNNER_TEMP/${{ matrix.artifact }}.zip" ./*
+            powershell -NoProfile -Command "Compress-Archive -Path '$PKG_DIR/*' -DestinationPath '$RUNNER_TEMP/${{ matrix.artifact }}.zip' -Force"
           else
             tar -czf "$RUNNER_TEMP/${{ matrix.artifact }}.tar.gz" ./*
           fi
