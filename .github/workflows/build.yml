@@ -1,0 +1,208 @@
+name: Build native 7-Zip ZS
+
+# Builds native 7zz binaries from the newest mcmilk/7-Zip-zstd tag and
+# publishes them as a GitHub Release with the SAME tag name. Manual runs can
+# pin a specific tag and overwrite an existing release.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Upstream tag to build (default: newest tag)'
+        required: false
+      publish:
+        description: 'Create/update a GitHub Release with the assets'
+        type: boolean
+        default: false
+      overwrite:
+        description: 'Replace assets of an existing release with the same tag'
+        type: boolean
+        default: false
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: build-native
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      commit: ${{ steps.resolve.outputs.commit }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Resolve upstream tag and commit
+        id: resolve
+        run: |
+          UPSTREAM="mcmilk/7-Zip-zstd"
+          TAG=""
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+            # Accept both "v26.02-v1.5.7-R2" and "refs/tags/v26.02-v1.5.7-R2".
+            TAG="${TAG#refs/tags/}"
+          fi
+          if [ -z "$TAG" ] && [ "${{ github.event_name }}" = "push" ]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          if [ -z "$TAG" ]; then
+            # Pick the newest tag by version instead of trusting
+            # releases/latest: the "latest" release may point at an older tag.
+            TAG=$(gh api "repos/$UPSTREAM/tags" --paginate -q '.[].name' \
+              | sort -V \
+              | tail -1)
+          fi
+          if [ -z "$TAG" ]; then
+            echo "::error::could not resolve upstream tag"
+            exit 1
+          fi
+          # Peel annotated tags to the commit SHA so the checkout stays pinned
+          # even if the tag is moved or recreated later.
+          REF=$(gh api "repos/$UPSTREAM/git/ref/tags/$TAG" 2>/dev/null) || {
+            echo "::error::upstream tag '$TAG' not found in $UPSTREAM (expected e.g. v26.02-v1.5.7-R2)"
+            exit 1
+          }
+          if [ "$(printf '%s' "$REF" | jq -r '.object.type')" = "tag" ]; then
+            TAG_OBJ=$(printf '%s' "$REF" | jq -r '.object.sha')
+            SHA=$(gh api "repos/$UPSTREAM/git/tags/$TAG_OBJ" -q '.object.sha')
+          else
+            SHA=$(printf '%s' "$REF" | jq -r '.object.sha')
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "commit=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Building tag: $TAG (commit: $SHA)"
+
+  build:
+    needs: resolve
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            os: ubuntu-latest
+            artifact: 7zz-linux-x64
+            pkg: tar.gz
+          - name: linux-arm64
+            os: ubuntu-24.04-arm
+            artifact: 7zz-linux-arm64
+            pkg: tar.gz
+          - name: macos-arm64
+            os: macos-14
+            artifact: 7zz-macos-arm64
+            pkg: tar.gz
+          - name: macos-x64
+            os: macos-13
+            artifact: 7zz-macos-x64
+            pkg: tar.gz
+          - name: windows-x64
+            os: windows-latest
+            artifact: 7zz-windows-x64
+            pkg: zip
+    steps:
+      - name: Set up MSYS2 (Windows)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
+
+      - name: Checkout upstream
+        uses: actions/checkout@v7
+        with:
+          repository: mcmilk/7-Zip-zstd
+          ref: ${{ needs.resolve.outputs.commit }}
+          path: src-7zip
+
+      - name: Build (Windows, MSYS2 MinGW)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          cd src-7zip/CPP/7zip/Bundles/Alone2
+          # Some MinGW import libraries lack the newer
+          # FileTimeToLocalFileTime2/LocalFileTimeToFileTime2 exports; link the
+          # fallback implementation provided by MyWindows.cpp.
+          g++ -O2 -c -DNDEBUG -D_REENTRANT -D_FILE_OFFSET_BITS=64 \
+            -D_LARGEFILE_SOURCE -fPIC -flto=auto \
+            -o _o/MyWindows.o ../../../Common/MyWindows.cpp
+          make -j2 -f makefile.gcc \
+            MY_LIBS="_o/MyWindows.o" \
+            CFLAGS_WARN_WALL="-Wall -Wextra"
+
+      - name: Build (Linux / macOS)
+        if: runner.os != 'Windows'
+        run: |
+          cd src-7zip/CPP/7zip/Bundles/Alone2
+          make -j2 -f makefile.gcc CFLAGS_WARN_WALL="-Wall -Wextra"
+
+      - name: Package
+        shell: bash
+        run: |
+          set -e
+          PKG_DIR="$RUNNER_TEMP/pkg"
+          mkdir -p "$PKG_DIR"
+          cp src-7zip/CPP/7zip/Bundles/Alone2/_o/7zz* "$PKG_DIR/" 2>/dev/null || true
+          cp src-7zip/COPYING "$PKG_DIR/LICENSE" 2>/dev/null || true
+          {
+            echo "tag=${{ needs.resolve.outputs.tag }}"
+            echo "upstream_commit=${{ needs.resolve.outputs.commit }}"
+            echo "build_repo_commit=$GITHUB_SHA"
+          } > "$PKG_DIR/VERSION"
+          cd "$PKG_DIR"
+          if [ "${{ matrix.pkg }}" = "zip" ]; then
+            tar -a -c -f "$RUNNER_TEMP/${{ matrix.artifact }}.zip" ./*
+          else
+            tar -czf "$RUNNER_TEMP/${{ matrix.artifact }}.tar.gz" ./*
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ runner.temp }}/${{ matrix.artifact }}.*
+          if-no-files-found: error
+
+  publish:
+    needs: [resolve, build]
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
+        run: |
+          TAG="${{ needs.resolve.outputs.tag }}"
+          COMMIT="${{ needs.resolve.outputs.commit }}"
+          NOTES="7-Zip ZS $TAG native binaries built from upstream commit $COMMIT
+          (https://github.com/mcmilk/7-Zip-zstd/commit/$COMMIT).
+
+          - Linux x64 / arm64 (7zz)
+          - macOS x64 / arm64 (7zz)
+          - Windows x64 (7zz.exe)"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            if [ "${{ github.event.inputs.overwrite }}" = "true" ] || [ "${{ github.event_name }}" = "push" ]; then
+              gh release upload "$TAG" dist/*.zip dist/*.tar.gz --clobber
+              gh release edit "$TAG" --title "7-Zip ZS $TAG (native)" --notes "$NOTES"
+            else
+              echo "release $TAG already exists; set overwrite=true to replace assets"
+            fi
+          else
+            gh release create "$TAG" dist/*.zip dist/*.tar.gz \
+              --title "7-Zip ZS $TAG (native)" \
+              --notes "$NOTES"
+          fi
