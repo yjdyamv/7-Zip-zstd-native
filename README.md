@@ -48,8 +48,9 @@ corresponding upstream tag and publishes/updates the release automatically.
   build-base`) so g++ links natively against musl — no cross-toolchain
   ABI risk — then `LDFLAGS_STATIC_2=-static` (command-line override wins
   over the makefile's empty default) makes the binary fully static. Each
-  musl job verifies the result: `file` must report "statically linked"
-  and the binary must run (`7zz i`).
+  musl job verifies the result: `file` must not report "dynamically
+  linked" (static or static-PIE both pass) and the binary must run
+  (`7zz i`).
 - Windows x64/arm64 use the upstream nmake `makefile` with MSVC
   (`vcvarsall.bat` + `nmake PLATFORM=x64|arm64`) on native runners — the
   same route upstream uses for official Windows builds, so no MinGW

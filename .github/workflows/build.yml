@@ -172,7 +172,10 @@ jobs:
         run: |
           BIN=src-7zip/CPP/7zip/Bundles/Alone2/_o/7zz
           file "$BIN"
-          if ! file "$BIN" | grep -q "statically linked"; then
+          # Accept both "statically linked" and "static-pie linked" (gcc 15 /
+          # alpine 3.24 emits static-PIE by default) — any "dynamically
+          # linked" output means the -static override failed.
+          if file "$BIN" | grep -q "dynamically linked"; then
             echo "::error::musl 7zz is not statically linked"
             exit 1
           fi
