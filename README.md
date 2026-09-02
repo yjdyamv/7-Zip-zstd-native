@@ -17,7 +17,7 @@ so every release can be traced back to the exact source it was built from
 | Linux arm64 | `ubuntu-24.04-arm` | `7zz-linux-arm64.tar.gz` |
 | Linux x64 musl-static | `ubuntu-latest` (Alpine container) | `7zz-linux-x64-musl.tar.gz` |
 | Linux arm64 musl-static | `ubuntu-24.04-arm` (Alpine container) | `7zz-linux-arm64-musl.tar.gz` |
-| macOS arm64 | `macos-14` | `7zz-macos-arm64.tar.gz` |
+| macOS arm64 | `macos-26` | `7zz-macos-arm64.tar.gz` |
 | Windows x64 | `windows-latest` (MSVC nmake) | `7zz-windows-x64.zip` |
 | Windows arm64 | `windows-11-arm` (MSVC nmake) | `7zz-windows-arm64.zip` |
 
@@ -44,7 +44,7 @@ corresponding upstream tag and publishes/updates the release automatically.
 ## Build notes
 
 - Linux/macOS use the upstream `makefile.gcc` directly (GCC/clang).
-  The musl-static variants build in an Alpine container (`apk add
+  The musl-static variants build in an Alpine 3.24 container (`apk add
   build-base`) so g++ links natively against musl — no cross-toolchain
   ABI risk — then `LDFLAGS_STATIC_2=-static` (command-line override wins
   over the makefile's empty default) makes the binary fully static. Each
