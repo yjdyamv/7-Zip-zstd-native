@@ -153,12 +153,15 @@ jobs:
       # Native musl build: g++ in an Alpine container links against musl
       # libc. LDFLAGS_STATIC_2=-static (command line wins over the makefile's
       # empty default) produces a fully static binary that also runs on
-      # glibc hosts.
+      # glibc hosts. The whole source tree is mounted (makefile.gcc includes
+      # ../Format7zF/Arc_gcc.mak and ../../7zip_gcc.mak above Alone2); the
+      # _o output lands back in the mounted tree for the Package step.
       - name: Build (Linux, musl-static via Alpine)
         if: matrix.libc == 'musl'
         run: |
-          cd src-7zip/CPP/7zip/Bundles/Alone2
-          docker run --rm -v "$PWD":/build -w /build alpine:3.22 \
+          cd src-7zip
+          docker run --rm -v "$PWD":/build \
+            -w /build/CPP/7zip/Bundles/Alone2 alpine:3.22 \
             sh -c "apk add --no-cache build-base && \
                    make -j2 -f makefile.gcc \
                      CFLAGS_WARN_WALL='-Wall -Wextra' \
