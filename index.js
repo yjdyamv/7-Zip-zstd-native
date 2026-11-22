@@ -21,7 +21,7 @@ function getPath() {
   const file = BINARIES[KEY];
   if (!file) {
     throw new Error(
-      `7zip-zstd: no prebuilt 7zz binary for "${KEY}". ` +
+      `7zip-zstd-native: no prebuilt 7zz binary for "${KEY}". ` +
         `Supported platforms: ${Object.keys(BINARIES).join(', ')}.`
     );
   }
@@ -29,7 +29,7 @@ function getPath() {
   const binPath = nodePath.join(__dirname, 'bin', KEY, file);
   if (!fs.existsSync(binPath)) {
     throw new Error(
-      `7zip-zstd: expected binary at ${binPath} but it is missing. ` +
+      `7zip-zstd-native: expected binary at ${binPath} but it is missing. ` +
         `Reinstall the package (bin/ contents may have been stripped).`
     );
   }

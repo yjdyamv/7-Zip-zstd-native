@@ -7,7 +7,7 @@ const { path: binPath } = require('./index.js');
 const result = spawnSync(binPath, process.argv.slice(2), { stdio: 'inherit' });
 
 if (result.error) {
-  console.error(`7zip-zstd: failed to run ${binPath}: ${result.error.message}`);
+  console.error(`7zip-zstd-native: failed to run ${binPath}: ${result.error.message}`);
   process.exit(1);
 }
 

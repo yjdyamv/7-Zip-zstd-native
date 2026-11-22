@@ -283,10 +283,10 @@ jobs:
               --notes "$NOTES"
           fi
 
-  # Publish the assembled binaries to npm as the single package `7zip-zstd`.
+  # Publish the assembled binaries to npm as the single package `7zip-zstd-native`.
   # Uses npm Trusted Publishing (OIDC): no long-lived token, and provenance
   # attestations are generated automatically. Configure the trusted publisher
-  # for the `7zip-zstd` package on npmjs.com with this workflow filename.
+  # for the `7zip-zstd-native` package on npmjs.com with this workflow filename.
   npm:
     needs: [resolve, build]
     if: >
@@ -353,9 +353,9 @@ jobs:
       - name: Publish to npm (skip if already published)
         run: |
           VER=$(node -p "require('./package.json').version")
-          if npm view "7zip-zstd@$VER" version >/dev/null 2>&1; then
-            echo "7zip-zstd@$VER is already published; nothing to do"
+          if npm view "7zip-zstd-native@$VER" version >/dev/null 2>&1; then
+            echo "7zip-zstd-native@$VER is already published; nothing to do"
             exit 0
           fi
-          echo "Publishing 7zip-zstd@$VER"
+          echo "Publishing 7zip-zstd-native@$VER"
           npm publish

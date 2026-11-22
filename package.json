@@ -1,5 +1,5 @@
 {
-  "name": "7zip-zstd",
+  "name": "7zip-zstd-native",
   "version": "26.2.0",
   "description": "7-Zip ZS (7zz) native binaries for Linux, macOS and Windows",
   "license": "MIT",

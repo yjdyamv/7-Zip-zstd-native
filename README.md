@@ -33,7 +33,7 @@ inspecting the binary's architecture — the build itself runs natively).
 ## npm package
 
 The binaries are also published to npm as the single package
-[`7zip-zstd`](https://www.npmjs.com/package/7zip-zstd), primarily so the
+[`7zip-zstd-native`](https://www.npmjs.com/package/7zip-zstd-native), primarily so the
 **vscode-smart-archive** extension can locate a `7zz` binary at runtime, and
 secondarily for anyone who wants a zero-setup `7zz` in Node.
 
@@ -52,13 +52,13 @@ Supported platforms in the npm package:
 | `win32` | `arm64` | `win32-arm64` | `7zz-windows-arm64` |
 
 ```bash
-npm i -g 7zip-zstd     # global CLI: `7zz ...`
-npx 7zip-zstd i        # one-off, no install
+npm i -g 7zip-zstd-native     # global CLI: `7zz ...`
+npx 7zip-zstd-native i        # one-off, no install
 ```
 
 ```js
 const { spawn } = require('node:child_process');
-const { path } = require('7zip-zstd'); // absolute path to the 7zz binary
+const { path } = require('7zip-zstd-native'); // absolute path to the 7zz binary
 
 spawn(path, ['x', 'archive.7z'], { stdio: 'inherit' });
 ```
