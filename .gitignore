@@ -2,3 +2,7 @@ dist/
 *.tar.gz
 *.zip
 _o/
+
+# Native binaries are assembled at publish time, never committed.
+bin/
+COPYING

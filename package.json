@@ -1,0 +1,43 @@
+{
+  "name": "7zip-zstd",
+  "version": "26.2.0",
+  "description": "7-Zip ZS (7zz) native binaries for Linux, macOS and Windows",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yjdyamv/7-Zip-zstd-native.git"
+  },
+  "homepage": "https://github.com/yjdyamv/7-Zip-zstd-native#readme",
+  "bugs": {
+    "url": "https://github.com/yjdyamv/7-Zip-zstd-native/issues"
+  },
+  "bin": {
+    "7zz": "cli.js"
+  },
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "cli.js",
+    "index.js",
+    "index.d.ts",
+    "bin",
+    "COPYING"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "keywords": [
+    "7zip",
+    "7zz",
+    "zstd",
+    "zstandard",
+    "archive",
+    "compress",
+    "extract",
+    "binary"
+  ],
+  "7zipZstd": {
+    "upstreamTag": "",
+    "upstreamCommit": ""
+  }
+}

@@ -17,6 +17,9 @@ on:
         description: 'Replace assets of an existing release with the same tag'
         type: boolean
         default: false
+      npm_version:
+        description: 'Optional: npm package version to publish (default: package.json)'
+        required: false
   push:
     tags:
       - 'v*'
@@ -81,28 +84,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Linux ships a single fully-static musl build per arch: it runs on
+          # both glibc and musl (Alpine) hosts. The glibc-linked variants are
+          # deliberately not built — linked on ubuntu-latest (glibc 2.39) they
+          # would only run on the newest distros, a strictly worse trade.
           - name: linux-x64
             os: ubuntu-latest
             artifact: 7zz-linux-x64
             pkg: tar.gz
             outdir: _o
+            libc: musl
           - name: linux-arm64
             os: ubuntu-24.04-arm
             artifact: 7zz-linux-arm64
-            pkg: tar.gz
-            outdir: _o
-          # musl-static: one binary runs on BOTH glibc and musl (Alpine)
-          # hosts — built natively in an Alpine container so g++ links
-          # against musl with no cross-toolchain ABI risk.
-          - name: linux-x64-musl
-            os: ubuntu-latest
-            artifact: 7zz-linux-x64-musl
-            pkg: tar.gz
-            outdir: _o
-            libc: musl
-          - name: linux-arm64-musl
-            os: ubuntu-24.04-arm
-            artifact: 7zz-linux-arm64-musl
             pkg: tar.gz
             outdir: _o
             libc: musl
@@ -111,6 +105,15 @@ jobs:
             artifact: 7zz-macos-arm64
             pkg: tar.gz
             outdir: _o
+          # Intel macOS: GitHub's macOS runners are Apple Silicon only, so
+          # the x86_64 binary is cross-compiled (clang -arch x86_64) on the
+          # same macos-26 runner.
+          - name: macos-x64
+            os: macos-26
+            artifact: 7zz-macos-x64
+            pkg: tar.gz
+            outdir: _o
+            arch: x86_64
           - name: windows-x64
             os: windows-latest
             artifact: 7zz-windows-x64
@@ -144,11 +147,39 @@ jobs:
           nmake -nologo -f makefile PLATFORM=${{ matrix.arch }}
           if errorlevel 1 exit /b 1
 
-      - name: Build (Linux / macOS)
-        if: runner.os != 'Windows' && matrix.libc != 'musl'
+      - name: Build (macOS)
+        if: runner.os == 'macOS' && matrix.libc != 'musl'
         run: |
           cd src-7zip/CPP/7zip/Bundles/Alone2
-          make -j2 -f makefile.gcc CFLAGS_WARN_WALL="-Wall -Wextra"
+          # Cross-compile Intel (x86_64) on the Apple Silicon runner when
+          # matrix.arch is set; clang's -arch selects the target slice.
+          ARCH_FLAGS=""
+          if [ -n "${{ matrix.arch }}" ]; then
+            ARCH_FLAGS="-arch ${{ matrix.arch }}"
+          fi
+          make -j2 -f makefile.gcc \
+            CC="clang $ARCH_FLAGS" \
+            CXX="clang++ $ARCH_FLAGS" \
+            CFLAGS_WARN_WALL="-Wall -Wextra"
+
+      - name: Verify macOS binary
+        if: runner.os == 'macOS' && matrix.libc != 'musl'
+        run: |
+          set -e
+          BIN=src-7zip/CPP/7zip/Bundles/Alone2/_o/7zz
+          file "$BIN"
+          if [ -n "${{ matrix.arch }}" ]; then
+            file "$BIN" | grep -q "x86_64" || {
+              echo "::error::expected x86_64 binary"; exit 1; }
+          fi
+          if "$BIN" i >/dev/null 2>&1; then
+            echo "OK: macOS 7zz"
+          elif [ -n "${{ matrix.arch }}" ]; then
+            # Running the Intel build needs Rosetta 2, which may be absent.
+            echo "::warning::cross-built 7zz did not run here (Rosetta 2 unavailable?); architecture checked above"
+          else
+            echo "::error::7zz failed to run"; exit 1
+          fi
 
       # Native musl build: g++ in an Alpine container links against musl
       # libc. LDFLAGS_STATIC_2=-static (command line wins over the makefile's
@@ -235,11 +266,10 @@ jobs:
           NOTES="7-Zip ZS $TAG native binaries built from upstream commit $COMMIT
           (https://github.com/mcmilk/7-Zip-zstd/commit/$COMMIT).
 
-          - Linux x64 / arm64 (7zz)
-          - Linux x64 / arm64 musl-static (7zz) — runs on both glibc and
-            musl (Alpine) hosts
-          - macOS arm64 (7zz)
-          - Windows x64 (7zz.exe)"
+          - Linux x64 / arm64 (7zz) — fully static musl build, runs on both
+            glibc and musl (Alpine) hosts
+          - macOS arm64 / x64 (7zz)
+          - Windows x64 / arm64 (7zz.exe)"
           if gh release view "$TAG" >/dev/null 2>&1; then
             if [ "${{ github.event.inputs.overwrite }}" = "true" ] || [ "${{ github.event_name }}" = "push" ]; then
               gh release upload "$TAG" dist/*.zip dist/*.tar.gz --clobber
@@ -252,3 +282,80 @@ jobs:
               --title "7-Zip ZS $TAG (native)" \
               --notes "$NOTES"
           fi
+
+  # Publish the assembled binaries to npm as the single package `7zip-zstd`.
+  # Uses npm Trusted Publishing (OIDC): no long-lived token, and provenance
+  # attestations are generated automatically. Configure the trusted publisher
+  # for the `7zip-zstd` package on npmjs.com with this workflow filename.
+  npm:
+    needs: [resolve, build]
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout this repo (package.json, index.js, cli.js)
+        uses: actions/checkout@v7
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Assemble bin/
+        shell: bash
+        run: |
+          set -e
+          mkdir -p bin/linux-x64 bin/linux-arm64 bin/darwin-arm64 \
+                   bin/darwin-x64 bin/win32-x64 bin/win32-arm64
+          # Linux uses the musl-static build only: it runs on both glibc and
+          # musl hosts, so a single binary per arch covers every Linux target.
+          tar -xzf dist/7zz-linux-x64.tar.gz   -C bin/linux-x64     ./7zz
+          tar -xzf dist/7zz-linux-arm64.tar.gz -C bin/linux-arm64   ./7zz
+          tar -xzf dist/7zz-macos-arm64.tar.gz -C bin/darwin-arm64  ./7zz
+          tar -xzf dist/7zz-macos-x64.tar.gz   -C bin/darwin-x64    ./7zz
+          unzip -j -o dist/7zz-windows-x64.zip   7zz.exe -d bin/win32-x64
+          unzip -j -o dist/7zz-windows-arm64.zip 7zz.exe -d bin/win32-arm64
+          chmod 0755 bin/linux-*/7zz bin/darwin-*/7zz
+          # Hoist the upstream LGPL license (shipped as LICENSE in each
+          # archive) to the package root as COPYING, without clobbering the
+          # wrapper's own MIT LICENSE.
+          tar -xzOf dist/7zz-linux-x64.tar.gz ./LICENSE > COPYING
+          ls -lR bin COPYING
+
+      - name: Stamp package metadata
+        env:
+          TAG: ${{ needs.resolve.outputs.tag }}
+          COMMIT: ${{ needs.resolve.outputs.commit }}
+          NPM_VERSION: ${{ github.event.inputs.npm_version }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const p = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            if (process.env.NPM_VERSION) p.version = process.env.NPM_VERSION;
+            p["7zipZstd"] = {
+              upstreamTag: process.env.TAG,
+              upstreamCommit: process.env.COMMIT,
+            };
+            fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");
+          '
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+
+      - name: Publish to npm (skip if already published)
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          if npm view "7zip-zstd@$VER" version >/dev/null 2>&1; then
+            echo "7zip-zstd@$VER is already published; nothing to do"
+            exit 0
+          fi
+          echo "Publishing 7zip-zstd@$VER"
+          npm publish
