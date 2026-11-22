@@ -17,9 +17,6 @@ on:
         description: 'Replace assets of an existing release with the same tag'
         type: boolean
         default: false
-      npm_version:
-        description: 'Optional: npm package version to publish (default: package.json)'
-        required: false
   push:
     tags:
       - 'v*'
@@ -327,35 +324,77 @@ jobs:
           tar -xzOf dist/7zz-linux-x64.tar.gz ./LICENSE > COPYING
           ls -lR bin COPYING
 
-      - name: Stamp package metadata
-        env:
-          TAG: ${{ needs.resolve.outputs.tag }}
-          COMMIT: ${{ needs.resolve.outputs.commit }}
-          NPM_VERSION: ${{ github.event.inputs.npm_version }}
-        run: |
-          node -e '
-            const fs = require("fs");
-            const p = JSON.parse(fs.readFileSync("package.json", "utf8"));
-            if (process.env.NPM_VERSION) p.version = process.env.NPM_VERSION;
-            p["7zipZstd"] = {
-              upstreamTag: process.env.TAG,
-              upstreamCommit: process.env.COMMIT,
-            };
-            fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");
-          '
-
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
           package-manager-cache: false
 
+      # The npm version is derived from the upstream tag — `<7-Zip major>.<minor>`
+      # plus a per-line publish counter, clamped above whatever is already
+      # published (scripts/ci/npm-version-from-tag.sh). Upstream's exact
+      # identity goes into the `7zip` field, never into the version number.
+      - name: Compute npm version
+        id: npmver
+        env:
+          TAG: ${{ needs.resolve.outputs.tag }}
+        run: |
+          set -euo pipefail
+          name=$(node -p "require('./package.json').name")
+          versions=$(mktemp)
+          err=$(mktemp)
+          if ! npm view "$name" versions --json >"$versions" 2>"$err"; then
+            # Only "this package does not exist yet" may be read as "no
+            # versions": a network or auth failure must not become a first
+            # publish.
+            grep -q 'E404' "$err" || {
+              echo "::error::could not list published versions of $name"
+              cat "$err"
+              exit 1
+            }
+            : >"$versions"
+          fi
+          rm -f "$err"
+          version=$(bash scripts/ci/npm-version-from-tag.sh "$TAG" "$versions")
+          rm -f "$versions"
+          [ -n "$version" ] || {
+            echo "::error::could not derive a version from tag $TAG"
+            exit 1
+          }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "npm version: $version (from $TAG)"
+
+      - name: Stamp package metadata
+        env:
+          TAG: ${{ needs.resolve.outputs.tag }}
+          COMMIT: ${{ needs.resolve.outputs.commit }}
+          VERSION: ${{ steps.npmver.outputs.version }}
+          BUILD_REPO_COMMIT: ${{ github.sha }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const p = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            const tag = process.env.TAG;
+            const revision = (tag.match(/-R([0-9]+)$/) || [])[1] || "0";
+            const zstd = (tag.match(/-v([0-9][0-9.]*)-R[0-9]+$/) || [])[1] || "unknown";
+            p.version = process.env.VERSION;
+            p["7zip"] = {
+              upstreamTag: tag,
+              upstreamCommit: process.env.COMMIT,
+              revision: Number(revision),
+              zstd: zstd,
+              buildRepoCommit: process.env.BUILD_REPO_COMMIT,
+            };
+            fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");
+          '
+
       - name: Publish to npm (skip if already published)
         run: |
-          VER=$(node -p "require('./package.json').version")
-          if npm view "7zip-zstd-native@$VER" version >/dev/null 2>&1; then
-            echo "7zip-zstd-native@$VER is already published; nothing to do"
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "$name@$version is already published; nothing to do"
             exit 0
           fi
-          echo "Publishing 7zip-zstd-native@$VER"
-          npm publish
+          echo "Publishing $name@$version"
+          npm publish --provenance

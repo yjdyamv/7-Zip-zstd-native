@@ -1,6 +1,6 @@
 {
   "name": "7zip-zstd-native",
-  "version": "26.2.0",
+  "version": "0.0.0",
   "description": "7-Zip ZS (7zz) native binaries for Linux, macOS and Windows",
   "license": "MIT",
   "repository": {
@@ -35,9 +35,5 @@
     "compress",
     "extract",
     "binary"
-  ],
-  "7zipZstd": {
-    "upstreamTag": "",
-    "upstreamCommit": ""
-  }
+  ]
 }

@@ -54,5 +54,5 @@ module.exports = {
   path: getPath(),
   getPath,
   version: pkg.version,
-  upstream: pkg['7zipZstd'],
+  upstream: pkg['7zip'],
 };

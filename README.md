@@ -64,8 +64,25 @@ spawn(path, ['x', 'archive.7z'], { stdio: 'inherit' });
 ```
 
 The export also includes `getPath()` (same value, resolved lazily on call),
-`version` (the npm package version) and `upstream` (`{ upstreamTag,
-upstreamCommit }`) for tracing the binaries back to the upstream source.
+`version` (the npm package version) and `upstream` for tracing the binaries
+back to the upstream source.
+
+### Version numbers
+
+The npm version is derived from the upstream tag at publish time, matching the
+sibling [7zip-zstd-wasm](https://github.com/yjdyamv/7-Zip-zstd-wasm) package:
+
+    <7-Zip major>.<7-Zip minor>.<publish counter>
+
+`v26.05-v1.5.7-R1` → `26.5.0`; another publish of the same 7-Zip line → `26.5.1`,
+`26.5.2`, …; `v26.06-…` → `26.6.0`. The counter is per 7-Zip line and is
+consumed by every publish of that line, whether it comes from a new upstream
+tag or a rebuild. The computed version is clamped above the newest published
+one so an older upstream line can never move `latest` backwards.
+
+Upstream's exact identity (tag, commit, R revision, zstd version) is *not* in
+the version number — it is recorded in the package's `7zip` field, in each
+archive's `VERSION` file, and exposed at runtime as `require('7zip-zstd-native').upstream`.
 
 ## Usage
 
@@ -76,8 +93,6 @@ Actions → **Build native 7-Zip ZS** → Run workflow:
 - `tag` — upstream tag to build (default: newest upstream tag by version).
 - `publish` — create/update a GitHub Release **and** publish to npm.
 - `overwrite` — replace assets of an existing release with the same tag.
-- `npm_version` — optional: npm version to publish (default: `package.json`).
-  npm versions are immutable, so bump this to re-publish.
 
 ### Tag push
 
